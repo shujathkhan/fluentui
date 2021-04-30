@@ -8,6 +8,50 @@ variables:
   - template: .devops/templates/variables.yml
 
 jobs:
+  - job: bundlesize
+    workspace:
+      clean: all
+    pool: 'Self Host Ubuntu'
+    steps:
+      - template: .devops/templates/tools.yml
+
+      - task: Bash@3
+        inputs:
+          filePath: yarn-ci.sh
+        displayName: yarn
+
+      - script: |
+          yarn build --no-cache $(sinceArg)
+        displayName: build packages
+
+      - script: |
+          yarn lage bundle-size --no-cache
+        displayName: create reports per package (PR only)
+
+      - script: |
+          yarn bundle-size compare-reports --branch=$(System.PullRequest.TargetBranch) --output=markdown --verbose
+        displayName: compare bundle size with base (PR only)
+        condition: variables.isPR
+
+      - task: GithubPRComment@0
+        displayName: 'Post results to PR'
+        condition: variables.isPR
+        inputs:
+          githubOwner: microsoft
+          githubRepo: 'fluentui'
+          blobFilePath: 'apps/bundle-size/dist/bundle-size.md'
+          status: 'success'
+          uniqueId: 'bundleSizeComment9423'
+
+      - script: |
+          yarn bundle-size upload-report --branch master --commit-sha abcd
+        displayName: upload a report (master only)
+        condition: not(variables.isPR)
+        env:
+          BUNDLESIZE_ACCOUNT_KEY: $(bundlesize-account-key)
+
+      - template: .devops/templates/cleanup.yml
+
   - job: build_react
     workspace:
       clean: all
